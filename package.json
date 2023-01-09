@@ -4,6 +4,7 @@
   "description": "vue-next-mini",
   "main": "index.js",
   "scripts": {
+    "dev": "rollup -c -w",
     "build": "rollup -c"
   },
   "keywords": [

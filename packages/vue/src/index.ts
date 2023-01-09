@@ -1,3 +1,1 @@
-const a: string = 'hello'
-
-console.log(a)
+export { reactive, effect } from '@vue/reactivity'
