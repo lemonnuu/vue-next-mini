@@ -1,3 +1,4 @@
+import { isObject } from '@vue/shared'
 import { mutableHandlers } from './baseHandlers'
 
 // 源码里头不是 object 类型, 是一个包含 ReactiveFlags 的 Target 接口
@@ -16,9 +17,11 @@ function createReactiveObject(
   proxyMap: WeakMap<object, any>
 ) {
   const existingProxy = proxyMap.get(target)
-  // target already has corresponding Proxy, target 有相应的 Proxy 直接返回
   if (existingProxy) return existingProxy
   const proxy = new Proxy(target, baseHandlers)
   proxyMap.set(target, proxy)
   return proxy
 }
+
+export const toReactive = <T extends unknown>(value: T): T =>
+  isObject(value) ? reactive(value as object) : value

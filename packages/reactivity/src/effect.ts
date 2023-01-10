@@ -3,13 +3,14 @@ import { createDep, Dep } from './dep'
 
 type keyToDepMap = Map<any, Dep>
 
-// 依赖保存
+// 保存依赖的变量
 const targetMap = new WeakMap<object, keyToDepMap>()
 
 /** 源码还可以传第二个参数 options?: ReactiveEffectOptions
  */
 export function effect<T = any>(fn: () => T) {
   const _effect = new ReactiveEffect(fn)
+  // run() 执行 fn(), 如果里面 有响应式数据 则触发 mutableHandle 的 getter 或 setter 行为, 收集或触发依赖
   _effect.run()
 }
 
@@ -60,7 +61,6 @@ export function trigger(target: object, key: unknown, newValue: unknown) {
  */
 export function triggerEffects(dep: Dep) {
   const effects = isArray(dep) ? dep : [...dep]
-
   // 依次触发依赖
   for (const effect of effects) {
     triggerEffect(effect)
