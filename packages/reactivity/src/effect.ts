@@ -1,5 +1,8 @@
 import { isArray } from '@vue/shared'
+import { ComputedRefImpl } from './computed'
 import { createDep, Dep } from './dep'
+
+export type EffectScheduler = (...args: any[]) => any
 
 type keyToDepMap = Map<any, Dep>
 
@@ -18,7 +21,11 @@ export function effect<T = any>(fn: () => T) {
 export let activeEffect: ReactiveEffect | undefined
 
 export class ReactiveEffect<T = any> {
-  constructor(public fn: () => T) {}
+  public computed?: ComputedRefImpl<T>
+  constructor(
+    public fn: () => T,
+    public scheduler: EffectScheduler | null = null
+  ) {}
 
   run() {
     activeEffect = this
@@ -63,12 +70,23 @@ export function triggerEffects(dep: Dep) {
   const effects = isArray(dep) ? dep : [...dep]
   // 依次触发依赖
   for (const effect of effects) {
-    triggerEffect(effect)
+    if (effect.computed) {
+      triggerEffect(effect)
+    }
+  }
+  for (const effect of effects) {
+    if (!effect.computed) {
+      triggerEffect(effect)
+    }
   }
 }
 
 /** 触发指定依赖
  */
 export function triggerEffect(effect: ReactiveEffect) {
-  effect.run()
+  if (effect.scheduler) {
+    effect.scheduler()
+  } else {
+    effect.run()
+  }
 }
