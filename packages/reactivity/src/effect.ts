@@ -1,4 +1,4 @@
-import { isArray } from '@vue/shared'
+import { extend, isArray } from '@vue/shared'
 import { ComputedRefImpl } from './computed'
 import { createDep, Dep } from './dep'
 
@@ -9,12 +9,24 @@ type keyToDepMap = Map<any, Dep>
 // 保存依赖的变量
 const targetMap = new WeakMap<object, keyToDepMap>()
 
+export interface ReactiveEffectOptions {
+  lazy?: boolean
+  scheduler: EffectScheduler
+}
+
 /** 源码还可以传第二个参数 options?: ReactiveEffectOptions
  */
-export function effect<T = any>(fn: () => T) {
+export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
   const _effect = new ReactiveEffect(fn)
+
+  if (options) {
+    extend(_effect, options)
+  }
+
   // run() 执行 fn(), 如果里面 有响应式数据 则触发 mutableHandle 的 getter 或 setter 行为, 收集或触发依赖
-  _effect.run()
+  if (!options || !options.lazy) {
+    _effect.run()
+  }
 }
 
 // 当前被激活的 effect
@@ -31,6 +43,8 @@ export class ReactiveEffect<T = any> {
     activeEffect = this
     return this.fn()
   }
+
+  stop() {}
 }
 
 /** 收集依赖
