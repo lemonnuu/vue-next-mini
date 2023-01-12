@@ -8,3 +8,5 @@ export const isFunction = (val: unknown): val is Function =>
 export const isString = (val: unknown): val is string => typeof val === 'string'
 export const extend = Object.assign
 export const EMPTY_OBJ: { readonly [key: string]: any } = {}
+const onRE = /^on[^a-z]/
+export const isOn = (key: string) => onRE.test(key)
