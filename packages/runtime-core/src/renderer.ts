@@ -1,6 +1,6 @@
 import { EMPTY_OBJ } from '@vue/shared'
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
-import { Comment, Fragment, Text } from './vnode'
+import { Comment, Fragment, isSameVNodeType, Text } from './vnode'
 
 export interface RendererOptions {
   /** 为指定的 Element 的 props 打补丁
@@ -15,6 +15,9 @@ export interface RendererOptions {
   /** 创建 Element
    */
   createElement(type: string)
+  /** 卸载指定 DOM
+   */
+  remove(el): void
 }
 
 export function createRenderer(options: RendererOptions) {
@@ -26,7 +29,8 @@ function baseCreateRenderer(options: RendererOptions): any {
     insert: hostInsert,
     patchProp: hostPatchProp,
     createElement: hostCreateElement,
-    setElementText: hostSetElementText
+    setElementText: hostSetElementText,
+    remove: hostRemove
   } = options
 
   const processElement = (oldVNode, newVNode, container, anchor) => {
@@ -123,6 +127,12 @@ function baseCreateRenderer(options: RendererOptions): any {
     if (oldVNode === newVNode) {
       return
     }
+
+    if (oldVNode && !isSameVNodeType(oldVNode, newVNode)) {
+      unmount(oldVNode)
+      oldVNode = null
+    }
+
     const { type, shapeFlag } = newVNode
     switch (type) {
       case Text:
@@ -140,9 +150,16 @@ function baseCreateRenderer(options: RendererOptions): any {
     }
   }
 
+  const unmount = vnode => {
+    hostRemove(vnode.el)
+  }
+
   const render = (vnode, container) => {
     if (vnode === null) {
-      // TODO: 卸载
+      // 卸载
+      if (container._vnode) {
+        unmount(container._vnode)
+      }
     } else {
       // container._vnode -> oldVNode
       patch(container._vnode || null, vnode, container)
