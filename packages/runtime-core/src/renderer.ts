@@ -1,6 +1,9 @@
 import { EMPTY_OBJ, isString } from '@vue/shared'
+import { ReactiveEffect } from 'packages/reactivity/src/effect'
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
-import { normalizeVNode } from './componentRenderUtils'
+import { createComponentInstance, setupComponent } from './component'
+import { normalizeVNode, renderComponentRoot } from './componentRenderUtils'
+import { queuePreFlushCb } from './scheduler'
 import { Comment, Fragment, isSameVNodeType, Text } from './vnode'
 
 export interface RendererOptions {
@@ -55,6 +58,59 @@ function baseCreateRenderer(options: RendererOptions): any {
     }
   }
 
+  const mountComponent = (initialVNode, container, anchor) => {
+    initialVNode.component = createComponentInstance(initialVNode)
+    const instance = initialVNode.component
+
+    setupComponent(instance)
+
+    setupRenderEffect(instance, initialVNode, container, anchor)
+  }
+
+  const setupRenderEffect = (instance, initialVNode, container, anchor) => {
+    const componentUpdateFn = () => {
+      if (!instance.isMounted) {
+        const { bm, m } = instance
+
+        if (bm) {
+          bm()
+        }
+
+        const subTree = (instance.subTree = renderComponentRoot(instance))
+
+        patch(null, subTree, container, anchor)
+
+        if (m) {
+          m()
+        }
+
+        initialVNode.el = subTree.el
+
+        instance.isMounted = true
+      } else {
+        let { next, vnode } = instance
+        if (!next) {
+          next = vnode
+        }
+
+        const nextTree = renderComponentRoot(instance)
+
+        const prevTree = instance.subTree
+        instance.subTree = nextTree
+        patch(prevTree, nextTree, container, anchor)
+        next.el = nextTree.el
+      }
+    }
+    const effect = (instance.effect = new ReactiveEffect(
+      componentUpdateFn,
+      () => queuePreFlushCb(update)
+    ))
+
+    const update = (instance.update = () => effect.run())
+
+    update()
+  }
+
   const mountElement = (vnode, container, anchor) => {
     const { type, props, shapeFlag } = vnode
     // 1. 创建 element
@@ -72,6 +128,12 @@ function baseCreateRenderer(options: RendererOptions): any {
     }
     // 4. 插入
     hostInsert(el, container, anchor)
+  }
+
+  const processComponent = (oldVNode, newVNode, container, anchor) => {
+    if (oldVNode == null) {
+      mountComponent(newVNode, container, anchor)
+    }
   }
 
   const processFragment = (oldVNode, newVNode, container, anchor) => {
@@ -201,6 +263,7 @@ function baseCreateRenderer(options: RendererOptions): any {
         if (shapeFlag & ShapeFlags.ELEMENT) {
           processElement(oldVNode, newVNode, container, anchor)
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
+          processComponent(oldVNode, newVNode, container, anchor)
         }
         break
     }
