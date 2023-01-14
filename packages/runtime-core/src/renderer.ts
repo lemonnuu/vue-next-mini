@@ -119,6 +119,7 @@ function baseCreateRenderer(options: RendererOptions): any {
       // 2. 设置文本
       hostSetElementText(el, vnode.children)
     } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+      mountChildren(vnode.children, el, anchor)
     }
     // 3. 设置 props
     if (props) {
@@ -203,6 +204,7 @@ function baseCreateRenderer(options: RendererOptions): any {
       if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
         if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
           // TODO: diff
+          patchKeyedChildren(c1, c2, container, anchor)
         } else {
           // TODO: 卸载
         }
@@ -216,6 +218,148 @@ function baseCreateRenderer(options: RendererOptions): any {
         }
       }
     }
+  }
+
+  const patchKeyedChildren = (
+    oldChildren,
+    newChildren,
+    container,
+    parentAnchor
+  ) => {
+    let i = 0
+    const newChildrenLength = newChildren.length
+    let oldChildrenEnd = oldChildren.length - 1
+    let newChildrenEnd = newChildren.length - 1
+
+    // 自前向后
+    while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+      const oldVNode = oldChildren[i]
+      const newVNode = normalizeVNode(newChildren[i])
+      if (isSameVNodeType(oldVNode, newVNode)) {
+        patch(oldVNode, newVNode, container, null)
+      } else {
+        break
+      }
+      i++
+    }
+
+    // 自后向前
+    while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+      const oldVNode = oldChildren[oldChildrenEnd]
+      const newVNode = newChildren[newChildrenEnd]
+      if (isSameVNodeType(oldVNode, newVNode)) {
+        patch(oldVNode, newVNode, container, null)
+      } else {
+        break
+      }
+      oldChildrenEnd--
+      newChildrenEnd--
+    }
+
+    // 新节点多余旧节点
+    if (i > oldChildrenEnd) {
+      if (i <= newChildrenEnd) {
+        const nextPos = newChildrenEnd + 1
+        const anchor =
+          nextPos < newChildren ? newChildren[nextPos].el : parentAnchor
+        while (i <= newChildrenEnd) {
+          patch(null, normalizeVNode(newChildren[i]), container, anchor)
+          i++
+        }
+      }
+    }
+
+    // 旧节点多余新节点
+    else if (i > newChildrenEnd) {
+      while (i <= oldChildrenEnd) {
+        unmount(oldChildren[i])
+        i++
+      }
+    }
+
+    // 5. 乱序的 diff 比对
+    else {
+      const oldStartIndex = i
+      const newStartIndex = i
+      const keyToNewIndexMap = new Map()
+      for (i = newStartIndex; i <= newChildrenEnd; i++) {
+        const nextChild = normalizeVNode(newChildren[i])
+        if (nextChild.key != null) {
+          keyToNewIndexMap.set(nextChild.key, i)
+        }
+      }
+
+      let j
+      let patched = 0
+      const toBePatched = newChildrenEnd - newStartIndex + 1
+      let moved = false
+      let maxNewIndexSoFar = 0
+      const newIndexToOldIndexMap = new Array(toBePatched)
+      for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
+      for (i = oldStartIndex; i <= oldChildrenEnd; i++) {
+        const prevChild = oldChildren[i]
+        if (patched >= toBePatched) {
+          unmount(prevChild)
+          continue
+        }
+        let newIndex
+        if (prevChild.key != null) {
+          newIndex = keyToNewIndexMap.get(prevChild.key)
+        } else {
+          for (j = newStartIndex; j <= newChildrenEnd; j++) {
+            if (
+              newIndexToOldIndexMap[j - newStartIndex] === 0 &&
+              isSameVNodeType(prevChild, newChildren[j])
+            ) {
+              newIndex = j
+              break
+            }
+          }
+        }
+        if (newIndex === undefined) {
+          unmount(prevChild)
+        } else {
+          newIndexToOldIndexMap[newIndex - newStartIndex] = i + 1
+          if (newIndex >= maxNewIndexSoFar) {
+            maxNewIndexSoFar = newIndex
+          } else {
+            moved = true
+          }
+          patch(prevChild, newChildren[newIndex], container, null)
+          patched++
+        }
+      }
+
+      const increasingNewIndexSequence = moved
+        ? getSequence(newIndexToOldIndexMap)
+        : []
+      j = increasingNewIndexSequence.length - 1
+      for (i = toBePatched - 1; i >= 0; i--) {
+        const nextIndex = newStartIndex + i
+        const nextChild = newChildren[nextIndex]
+        const anchor =
+          nextIndex + 1 < newChildrenLength
+            ? newChildren[nextIndex + 1].el
+            : parentAnchor
+        if (newIndexToOldIndexMap[i] === 0) {
+          patch(null, nextChild, container, anchor)
+        } else if (moved) {
+          if (j < 0 || i !== increasingNewIndexSequence[j]) {
+            move(nextChild, container, anchor)
+          } else {
+            j--
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 移动节点到指定位置
+   */
+  const move = (vnode, container, anchor) => {
+    const { el } = vnode
+    hostInsert(el!, container, anchor)
   }
 
   const patchProps = (el: Element, newVNode, oldProps, newProps) => {
@@ -289,4 +433,45 @@ function baseCreateRenderer(options: RendererOptions): any {
   return {
     render
   }
+}
+
+function getSequence(arr) {
+  const p = arr.slice()
+  const result = [0]
+  let i, j, u, v, c
+  const len = arr.length
+  for (i = 0; i < len; i++) {
+    const arrI = arr[i]
+    if (arrI !== 0) {
+      j = result[result.length - 1]
+      if (arr[j] < arrI) {
+        p[i] = j
+        result.push(i)
+        continue
+      }
+      u = 0
+      v = result.length - 1
+      while (u < v) {
+        c = (u + v) >> 1
+        if (arr[result[c]] < arrI) {
+          u = c + 1
+        } else {
+          v = c
+        }
+      }
+      if (arrI < arr[result[u]]) {
+        if (u > 0) {
+          p[i] = result[u - 1]
+        }
+        result[u] = i
+      }
+    }
+  }
+  u = result.length
+  v = result[u - 1]
+  while (u-- > 0) {
+    result[u] = v
+    v = p[v]
+  }
+  return result
 }
